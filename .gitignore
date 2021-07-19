@@ -1,0 +1,5 @@
+templates
+db.sqlite3
+venv
+.idea
+webscraping_engine/migrations
