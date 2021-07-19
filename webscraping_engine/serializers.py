@@ -3,4 +3,5 @@ from rest_framework.fields import CharField
 
 
 class ParseUniversitiesSerializer(Serializer):
-    name = CharField(max_length=50, required=True)
+    name = CharField(max_length=100, required=True)
+
