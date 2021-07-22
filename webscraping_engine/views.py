@@ -23,7 +23,8 @@ class ParseUniversities(APIView):
 
         if serializer.is_valid():
             universities = serializer.validated_data
-            valid_universities = [university.name for university in ValidUniversities.objects.all()]
+            valid_universities = [{"name": university.name, "url": university.url} for university in
+                                  ValidUniversities.objects.all()]
 
             for idx, university in enumerate(universities):
                 if university in valid_universities:
