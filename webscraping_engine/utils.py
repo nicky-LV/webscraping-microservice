@@ -1,18 +1,33 @@
 from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as ec
+from selenium.common.exceptions import TimeoutException
+
 import requests
 import time
 import os
 
+# Current working dir
+current_dir = os.path.dirname(os.path.abspath(__file__))
+chrome_options = Options()
+chrome_options.add_argument("--headless")
+chrome_options.add_argument("--no-sandbox")
+driver = webdriver.Chrome(executable_path=f"{current_dir}/chromedriver", options=chrome_options)
+wait = WebDriverWait(driver, 3)
 
-def university_is_valid(university_name, retries=5):
+
+def university_is_valid(university_name, confirm_cookies=False):
     """
     We scrape through possible UK universities to check which we can scrape accommodation data from.
     :return: str[], list of university names
     """
-
-    driver = webdriver.Chrome(executable_path="./chromedriver")
     driver.get("https://www.studentcrowd.com/")
-    confirm_cookie_settings(driver)
+    time.sleep(1)
+
+    if confirm_cookies:
+        confirm_cookie_settings(driver)
 
     # Input university name into searchbar
     input_searchbar(driver=driver, input_text=university_name)
@@ -21,15 +36,10 @@ def university_is_valid(university_name, retries=5):
     time.sleep(1)
 
     # Check that the university is valid and we can scrape data from it.
-    if retries > 0:
-        if university_in_title(driver, university_name):
-            return True
+    if university_in_title(driver, university_name):
+        return university_name, driver.current_url
 
-        else:
-            return university_is_valid(university_name=university_name, retries=retries-1)
-
-    else:
-        return False
+    return None, None
 
 
 def input_searchbar(driver, input_text: str) -> None:
@@ -86,5 +96,11 @@ def confirm_cookie_settings(driver) -> None:
     :param driver: object - driver object
     :return: None
     """
-    # Confirm cookie settings.
-    driver.find_element_by_id("onetrust-accept-btn-handler").click()
+    try:
+        # Confirm cookie settings.
+        cookie_button = wait.until(ec.visibility_of_element_located((By.ID, "onetrust-accept-btn-handler")))
+        if cookie_button:
+            cookie_button.click()
+
+    except TimeoutException:
+        pass
