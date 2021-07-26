@@ -3,9 +3,7 @@ from rest_framework.generics import ListAPIView
 from rest_framework.response import Response
 from rest_framework import status
 
-from typing import List
-
-from .utils import university_is_valid
+from .utils import WebscrapingUtils
 from .serializers import ParseUniversitiesSerializer, ValidUniversitySerializer
 from .models import ValidUniversities
 
@@ -19,10 +17,17 @@ class ParseUniversities(APIView):
         :return: str[] - list of valid universities.
         """
         university_list = request.data
-        serializer = ParseUniversitiesSerializer(data=university_list, many=True)
 
-        if serializer.is_valid():
-            universities = serializer.validated_data
+        many = False
+        # Conditionally set the "many" kwarg. True if len(university_list) > 1, else False
+        if len(university_list) > 1:
+            many = True
+
+        deserializer = ParseUniversitiesSerializer(data=university_list, many=many)
+        webscraping_utils = WebscrapingUtils()
+
+        if deserializer.is_valid():
+            universities = deserializer.validated_data
             valid_universities = [{"name": university.name, "url": university.url} for university in
                                   ValidUniversities.objects.all()]
 
@@ -35,26 +40,51 @@ class ParseUniversities(APIView):
                     # Check if the university is on the site, and thus is able to be scraped. 5 retries.
                     retries = 3
                     for i in range(retries):
-                        university_name, university_url = university_is_valid(university_name=university,
-                                                                              confirm_cookies=idx == 0)
+                        university_name, university_url = webscraping_utils.university_is_valid(university_name=university)
 
                         if university_name and university_url:
                             valid_universities.append({
                                 "name": university_name,
                                 "url": university_url
                             })
+                            # Break loop if it's successful.
+                            break
 
                         else:
-                            # Reduce retry number if university_is_valid returns False.
-                            retries -= 1
+                            pass
 
             return Response(data=valid_universities, status=status.HTTP_200_OK)
 
         else:
-            print(serializer.errors)
-            return Response(data="Invalid universities provided", status=status.HTTP_400_BAD_REQUEST)
+            print(deserializer.errors)
+            return Response(data=deserializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ListValidUniversities(ListAPIView):
     queryset = ValidUniversities.objects.all()
     serializer_class = ValidUniversitySerializer
+
+
+class ScrapeUniversityAccommodations(APIView):
+    """
+    Scrapes all of the halls from the URL of a SINGLE university.
+    """
+    def post(self, request):
+        serializer = ValidUniversitySerializer(request.data, many=False)
+        webscraping_utils = WebscrapingUtils()
+
+        if serializer.is_valid():
+            # List of accommodation data [{"name": str, "postcode": str...}, ...]
+            university_accommodation_data = []
+            university_name, university_url = serializer.validated_data["name"], serializer.validated_data["url"]
+            # List of accommodation urls.
+            accommodation_urls = webscraping_utils.get_university_accommodation_urls(university_url=university_url)
+
+            for accommodation_url in accommodation_urls:
+                # Retrieves data from accommodation url.
+                university_accommodation_data.append(webscraping_utils.get_accommodation_data(accommodation_url=accommodation_url))
+
+            return Response(data=university_accommodation_data, status=status.HTTP_200_OK)
+
+        else:
+            return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
