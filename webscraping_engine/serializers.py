@@ -5,7 +5,7 @@ from .models import ValidUniversities
 
 
 class ParseUniversitiesSerializer(Serializer):
-    name = CharField(max_length=100, required=True)
+    name = CharField(max_length=120, required=True)
 
 
 class ValidUniversitySerializer(ModelSerializer):
