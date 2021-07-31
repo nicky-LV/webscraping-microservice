@@ -9,19 +9,28 @@ from selenium.webdriver import ActionChains
 import requests
 import time
 import os
+import re
+
+from .exceptions import *
 
 # Current working dir
 current_dir = os.path.dirname(os.path.abspath(__file__))
 chrome_options = Options()
-chrome_options.add_argument("--headless")
 chrome_options.add_argument("--no-sandbox")
+chrome_options.add_argument('--disable-dev-shm-usage')
 
 
 class WebscrapingUtils:
     def __init__(self):
         self.selenium_driver = webdriver.Remote("http://selenium:4444/wd/hub", options=chrome_options)
 
-    def university_is_valid(self, university_name):
+    def quit(self) -> None:
+        self.selenium_driver.quit()
+
+    def get(self, url) -> None:
+        self.selenium_driver.get(url=url)
+
+    def university_is_valid(self, university_name: str):
         """
         We scrape through possible UK universities to check which we can scrape accommodation data from.
         :return: str[], list of university names
@@ -38,7 +47,8 @@ class WebscrapingUtils:
         if self.university_in_title(self.selenium_driver, university_name):
             return university_name, self.selenium_driver.current_url
 
-        return None, None
+        else:
+            return None, None
 
     def input_searchbar(self, driver, input_text: str) -> None:
         """
@@ -84,7 +94,11 @@ class WebscrapingUtils:
         location_data = data['results'][0]['geometry']['location']
         latitude, longitude = location_data['lat'], location_data['lng']
 
-        return latitude, longitude
+        if latitude and longitude:
+            return latitude, longitude
+
+        else:
+            raise GeocodingError("Geocoding error. Latitude or longitude is None.")
 
     def confirm_cookie_settings(self, driver) -> None:
         """
@@ -101,14 +115,18 @@ class WebscrapingUtils:
         except TimeoutException:
             pass
 
-    def get_accommodation_name(self, driver):
+    def get_accommodation_name(self):
         """
         Returns name of accommodation.
         :param driver: instance - driver instance.
         :return: str - accommodation name.
         """
-        return driver.find_element_by_css_selector(".cl span").text
+        name = self.selenium_driver.find_element_by_xpath("//span[@itemprop='name']").text
+        if name:
+            return name
 
+        else:
+            raise AccommodationNameNotFound
 
     def get_accommodation_data(self, accommodation_url: str):
         """
@@ -119,8 +137,10 @@ class WebscrapingUtils:
         # Go to accommodation page
         self.selenium_driver.get(accommodation_url)
 
+        # Initializes data dict, initially populates it with name of accommodation.
         data = {
-            "name": self.get_accommodation_name(driver=self.selenium_driver)
+            "name": self.get_accommodation_name(),
+            "src": self.get_accommodation_picture()
         }
 
         # Select all table DOM elements
@@ -136,42 +156,39 @@ class WebscrapingUtils:
             table_rows = info_table.find_element_by_css_selector("tbody").find_elements_by_css_selector("tr")
             for row in table_rows:
                 key_element, value_element = row.find_elements_by_css_selector("td")
-                attrs = ["Telephone", "Postcode", "Price from", "Catering"]
+                attrs = ["Telephone", "Postcode", "Price from", "Catering", "No. of rooms", "Features"]
                 if key_element.text in attrs:
                     # Conditional to transform the "Price from" key into "weekly_cost"
                     if key_element.text == "Price from":
                         data["weekly_cost"] = value_element.text
 
+                    elif key_element.text == "No. of rooms":
+                        data["total_rooms"] = value_element.text
+
                     else:
                         data[key_element.text.lower()] = value_element.text
+
+            # Retrieve latitude / longitude of accommodation from its postcode.
+            if data['postcode']:
+                data['latitude'], data['longitude'] = self.get_latitude_longitude_from_postcode(postcode=data['postcode'])
 
             return data
 
     def get_university_accommodation_urls(self, university_url: str):
         """
         Returns the url of each accommodation to a university.
+        :param university_url: str - URL of the university.
         :param driver: instance - driver instance.
         :return: str[] - list of URLs which correspond to the accommodations of a specific valid university.
         """
-        self.selenium_driver.get(url=university_url)
+
+        # The link for the halls follows https://www.studentcrowd.com/best-halls-<uni-code>/
+        self.selenium_driver.get(url=f"https://www.studentcrowd.com/best-halls-{self.get_university_code(url_string=university_url)}")
+        self.confirm_cookie_settings(driver=self.selenium_driver)
+
         accommodation_urls = []
-        # Selects all h4 elements on the page.
-        all_h4_elements = self.selenium_driver.find_elements_by_css_selector("h4")
-
-        # Loops through each h4 element.
-        for h4_element in all_h4_elements:
-            # Checks if that h4 element has an anchor tag.
-            child_link = h4_element.find_element_by_css_selector("a")
-            if child_link:
-                # If that anchor tag has "Hall Rankings" in the text, we click it to redirect to the halls ranking page.
-                if "Hall Rankings" in child_link.text:
-                    child_link.click()
-                    break
-
         # Exclude private accommodations from datapool
         self.selenium_driver.find_element_by_class_name("js-hall-type-filter").click()
-        time.sleep(0.5)
-
         # Gets all table items which *could* be halls accommodation.
         table_item = self.selenium_driver.find_elements_by_css_selector("a.js-hall-table-item")
         for possible_halls in table_item:
@@ -182,3 +199,24 @@ class WebscrapingUtils:
                 accommodation_urls.append(halls_url)
 
         return accommodation_urls
+
+    @staticmethod
+    def get_university_code(url_string: str):
+        """
+        Returns the university code from the url string.
+        :param url_string: str - url string
+        :return: str - university code. (e.g. l1001909-s1008497-the_university_of_warwick-coventry)
+        """
+        return re.findall(pattern=r'(?:https://www.studentcrowd.com/university)-([\s\S]+)', string=url_string)[0]
+
+    def get_accommodation_picture(self):
+        """
+        Driver must be on the accommodation URL.
+        Returns src of the picture.
+        :return: str - src of picture.
+        """
+        # Selects all images in the DOM, and selects the image which has "https://media.studentcrowd.net" in the src.
+        images = self.selenium_driver.find_elements_by_xpath("//img")
+        for image in images:
+            if "https://media.studentcrowd.net" in image.get_attribute("src"):
+                return str(image.get_attribute("src"))

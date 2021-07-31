@@ -4,3 +4,11 @@ class SerializationError(BaseException):
 
 class DeserializationError(BaseException):
     pass
+
+
+class AccommodationNameNotFound(BaseException):
+    pass
+
+
+class GeocodingError(BaseException):
+    pass
