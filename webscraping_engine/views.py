@@ -11,53 +11,60 @@ from .models import ValidUniversities
 class ParseUniversities(APIView):
     def post(self, request):
         """
-        Takes a POST request with a list of universities within the body. Returns a list of valid universities that are
-        can be scraped.
+        Takes a POST request with a university object {"name": university_name} within the body.
+        If successful, returns 200 OK with university data {"name": university_name, "url": university_url}
         :param request: object - request object.
         :return: str[] - list of valid universities.
         """
-        university_list = request.data
+        if request.data:
+            queried_university: dict = request.data
+            deserializer = ParseUniversitiesSerializer(data=queried_university, many=False)
+            webscraping_utils = WebscrapingUtils()
 
-        many = False
-        # Conditionally set the "many" kwarg. True if len(university_list) > 1, else False
-        if len(university_list) > 1:
-            many = True
+            if deserializer.is_valid():
+                deserialized_university = deserializer.validated_data
+                valid_universities_names = [university.name for university in ValidUniversities.objects.all()]
 
-        deserializer = ParseUniversitiesSerializer(data=university_list, many=many)
-        webscraping_utils = WebscrapingUtils()
+                # Queried university is cached in our backend microservice - but is cached/valid in our webscraping
+                # microservice.
+                if deserialized_university in valid_universities_names:
+                    # Serializes the valid university and returns it as a response.
+                    serializer = ValidUniversitySerializer(data=ValidUniversities.objects.get(
+                        name=deserialized_university).values())
 
-        if deserializer.is_valid():
-            universities = deserializer.validated_data
-            valid_universities = [{"name": university.name, "url": university.url} for university in
-                                  ValidUniversities.objects.all()]
+                    if serializer.is_valid():
+                        webscraping_utils.quit()
+                        return Response(data=serializer.validated_data, status=status.HTTP_200_OK)
 
-            for idx, university in enumerate(universities):
-                if university in valid_universities:
-                    pass
+                    else:
+                        webscraping_utils.quit()
+                        return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
+                # Queried university is not cached in either microservice.
                 else:
-                    university = university["name"]
-                    # Check if the university is on the site, and thus is able to be scraped. 5 retries.
+                    university_name = deserialized_university["name"]
+                    # Check if the university is on the site, and thus is able to be scraped. 3 retries.
                     retries = 3
                     for i in range(retries):
-                        university_name, university_url = webscraping_utils.university_is_valid(university_name=university)
+                        university_name, university_url = webscraping_utils.university_is_valid(
+                            university_name=university_name)
 
-                        if university_name and university_url:
-                            valid_universities.append({
+                        if university_name is not None and university_url is not None:
+                            webscraping_utils.quit()
+                            return Response(data={
                                 "name": university_name,
                                 "url": university_url
-                            })
-                            # Break loop if it's successful.
-                            break
+                            }, status=status.HTTP_200_OK)
 
                         else:
                             pass
 
-            return Response(data=valid_universities, status=status.HTTP_200_OK)
+                    webscraping_utils.quit()
 
-        else:
-            print(deserializer.errors)
-            return Response(data=deserializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            # Deserialization failed
+            else:
+                webscraping_utils.quit()
+                return Response(data=deserializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
 class ListValidUniversities(ListAPIView):
@@ -70,21 +77,28 @@ class ScrapeUniversityAccommodations(APIView):
     Scrapes all of the halls from the URL of a SINGLE university.
     """
     def post(self, request):
-        serializer = ValidUniversitySerializer(request.data, many=False)
-        webscraping_utils = WebscrapingUtils()
+        """
+        Request.data MUST contain the university with fields: ["name", "url"]
+        :param request:
+        :return:
+        """
+        if request.data:
+            serializer = ValidUniversitySerializer(data=request.data, many=False)
+            webscraping_utils = WebscrapingUtils()
 
-        if serializer.is_valid():
-            # List of accommodation data [{"name": str, "postcode": str...}, ...]
-            university_accommodation_data = []
-            university_name, university_url = serializer.validated_data["name"], serializer.validated_data["url"]
-            # List of accommodation urls.
-            accommodation_urls = webscraping_utils.get_university_accommodation_urls(university_url=university_url)
+            if serializer.is_valid():
+                # List of accommodation data [{"name": str, "postcode": str...}, ...]
+                university_accommodation_data = []
+                university_name, university_url = serializer.validated_data["name"], serializer.validated_data["url"]
+                # List of accommodation urls.
+                accommodation_urls = webscraping_utils.get_university_accommodation_urls(university_url=university_url)
 
-            for accommodation_url in accommodation_urls:
-                # Retrieves data from accommodation url.
-                university_accommodation_data.append(webscraping_utils.get_accommodation_data(accommodation_url=accommodation_url))
+                for accommodation_url in accommodation_urls:
+                    # Retrieves data from accommodation url.
+                    university_accommodation_data.append(webscraping_utils.get_accommodation_data(accommodation_url=
+                                                                                                  accommodation_url))
 
-            return Response(data=university_accommodation_data, status=status.HTTP_200_OK)
+                return Response(data=university_accommodation_data, status=status.HTTP_200_OK)
 
-        else:
-            return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+            else:
+                return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
