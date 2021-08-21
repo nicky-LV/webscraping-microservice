@@ -90,7 +90,8 @@ class WebscrapingUtils:
         :param postcode: str - postcode of accommodation. e.g. "L14 9VC"
         :return: (latitude, longitude)
         """
-        data = requests.get(f"https://maps.googleapis.com/maps/api/geocode/json?address={postcode}&key={os.getenv('GEOCODING_API_KEY')}").json()
+        data = requests.get(
+            f"https://maps.googleapis.com/maps/api/geocode/json?address={postcode}&key={os.getenv('GEOCODING_API_KEY')}").json()
         location_data = data['results'][0]['geometry']['location']
         latitude, longitude = location_data['lat'], location_data['lng']
 
@@ -172,7 +173,8 @@ class WebscrapingUtils:
 
             # Retrieve latitude / longitude of accommodation from its postcode.
             if data['postcode']:
-                data['latitude'], data['longitude'] = self.get_latitude_longitude_from_postcode(postcode=data['postcode'])
+                data['latitude'], data['longitude'] = self.get_latitude_longitude_from_postcode(
+                    postcode=data['postcode'])
 
             return data
 
@@ -185,7 +187,8 @@ class WebscrapingUtils:
         """
 
         # The link for the halls follows https://www.studentcrowd.com/best-halls-<uni-code>/
-        self.selenium_driver.get(url=f"https://www.studentcrowd.com/best-halls-{self.get_university_code(url_string=university_url)}")
+        self.selenium_driver.get(
+            url=f"https://www.studentcrowd.com/best-halls-{self.get_university_code(url_string=university_url)}")
         self.confirm_cookie_settings(driver=self.selenium_driver)
 
         accommodation_urls = []
@@ -262,17 +265,11 @@ class WebscrapingUtils:
         """
 
         try:
-            data = {}
-            percentages_elements: list = self.selenium_driver.find_elements_by_class_name("percentage")
-            for idx, element in enumerate(percentages_elements):
-                percentage = element.find_element_by_css_selector("span").text
-                if idx == 0:
-                    data['offer_rate'] = percentage
+            percentages_elements = self.selenium_driver.find_elements_by_class_name("percentage")
+            offer_rate, acceptance_rate = percentages_elements[0].find_element_by_css_selector("span").text, \
+                                          percentages_elements[1].find_element_by_css_selector("span").text
 
-                else:
-                    data['acceptance_rate'] = percentage
-
-            return data
+            return offer_rate, acceptance_rate
 
         except NoSuchElementException:
             return None
