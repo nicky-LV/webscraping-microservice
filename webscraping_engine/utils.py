@@ -160,7 +160,9 @@ class WebscrapingUtils:
                 if key_element.text in attrs:
                     # Conditional to transform the "Price from" key into "weekly_cost"
                     if key_element.text == "Price from":
-                        data["weekly_cost"] = value_element.text
+                        weekly_cost_str = value_element.text
+                        weekly_cost_float = float(weekly_cost_str.split(" ")[0][1::])
+                        data["weekly_cost"] = weekly_cost_float
 
                     elif key_element.text == "No. of rooms":
                         data["total_rooms"] = value_element.text
@@ -215,8 +217,38 @@ class WebscrapingUtils:
         Returns src of the picture.
         :return: str - src of picture.
         """
-        # Selects all images in the DOM, and selects the image which has "https://media.studentcrowd.net" in the src.
+        # Selects all images in the DOM, and selects the image which has
+        # "https://media.studentcrowd.net/w426-h284-q70-cfill/" in the src.
         images = self.selenium_driver.find_elements_by_xpath("//img")
         for image in images:
-            if "https://media.studentcrowd.net" in image.get_attribute("src"):
+            if "https://media.studentcrowd.net/w426-h284-q70-cfill/" in image.get_attribute("src"):
                 return str(image.get_attribute("src"))
+
+    def get_university_picture(self):
+        """
+        Driver must be on the university URL. Returns src of the picture.
+        :return: str - src of the picture.
+        """
+        images = self.selenium_driver.find_elements_by_xpath("//img")
+        for image in images:
+            if "https://media.studentcrowd.net/w426-h284-q70-cfill/" in image.get_attribute("src"):
+                return str(image.get_attribute("src"))
+
+    def get_university_ucas_points(self):
+        """
+        Driver must be on the university URL. Returns str of UCAS points required e.g. "130-150"
+        :return: str - UCAS points required. e.g. "130-150"
+        """
+        return self.selenium_driver.find_element_by_xpath(xpath="//p[@class='ucas-points']/strong").text
+
+    def get_tef_rating(self):
+        """
+        Driver must be on the university URL.
+        :return: str - TEF rating or None if data cannot be found.
+        """
+        if self.selenium_driver.find_element_by_xpath(xpath="//p[@class='tef']"):
+            tef_rating = self.selenium_driver.find_element_by_xpath(xpath="//p[@class='tef']").get_attribute("data-value")
+            return tef_rating
+
+        return None
+
