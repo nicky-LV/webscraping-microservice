@@ -3,7 +3,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as ec
-from selenium.common.exceptions import TimeoutException
+from selenium.common.exceptions import TimeoutException, NoSuchElementException
 from selenium.webdriver import ActionChains
 
 import requests
@@ -222,17 +222,20 @@ class WebscrapingUtils:
         images = self.selenium_driver.find_elements_by_xpath("//img")
         for image in images:
             if "https://media.studentcrowd.net/w426-h284-q70-cfill/" in image.get_attribute("src"):
-                return str(image.get_attribute("src"))
+                return str(image.get_attribute("src")).strip()
 
     def get_university_picture(self):
         """
         Driver must be on the university URL. Returns src of the picture.
         :return: str - src of the picture.
         """
-        images = self.selenium_driver.find_elements_by_xpath("//img")
+        images = self.selenium_driver.find_elements_by_css_selector("img")
         for image in images:
-            if "https://media.studentcrowd.net/w426-h284-q70-cfill/" in image.get_attribute("src"):
-                return str(image.get_attribute("src"))
+            if image.get_attribute("src"):
+                if "https://media.studentcrowd.net/w426-h284-q70-cfill/" in image.get_attribute("src"):
+                    return image.get_attribute("src")
+
+        return None
 
     def get_university_ucas_points(self):
         """
@@ -244,11 +247,32 @@ class WebscrapingUtils:
     def get_tef_rating(self):
         """
         Driver must be on the university URL.
-        :return: str - TEF rating or None if data cannot be found.
+        :return: str - TEF rating. None if data cannot be found.
         """
-        if self.selenium_driver.find_element_by_xpath(xpath="//p[@class='tef']"):
-            tef_rating = self.selenium_driver.find_element_by_xpath(xpath="//p[@class='tef']").get_attribute("data-value")
+        if self.selenium_driver.find_element_by_class_name("tef"):
+            tef_rating = self.selenium_driver.find_element_by_class_name("tef").get_attribute("data-value")
             return tef_rating
 
         return None
 
+    def get_offer_and_acceptance_rate(self):
+        """
+        Driver must be on the university URL.
+        :return: dict - offer and acceptance rate. None if data cannot be found.
+        """
+
+        try:
+            data = {}
+            percentages_elements: list = self.selenium_driver.find_elements_by_class_name("percentage")
+            for idx, element in enumerate(percentages_elements):
+                percentage = element.find_element_by_css_selector("span").text
+                if idx == 0:
+                    data['offer_rate'] = percentage
+
+                else:
+                    data['acceptance_rate'] = percentage
+
+            return data
+
+        except NoSuchElementException:
+            return None
