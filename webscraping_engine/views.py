@@ -19,7 +19,7 @@ class ParseUniversities(APIView):
         if request.data:
             queried_university: dict = request.data
             deserializer = ParseUniversitiesSerializer(data=queried_university, many=False)
-            webscraping_utils = WebscrapingUtils()
+            engine = WebscrapingUtils()
 
             if deserializer.is_valid():
                 deserialized_university = deserializer.validated_data
@@ -33,11 +33,11 @@ class ParseUniversities(APIView):
                         name=deserialized_university).values())
 
                     if serializer.is_valid():
-                        webscraping_utils.quit()
+                        engine.quit()
                         return Response(data=serializer.validated_data, status=status.HTTP_200_OK)
 
                     else:
-                        webscraping_utils.quit()
+                        engine.quit()
                         return Response(data=serializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
                 # Queried university is not cached in either microservice.
@@ -46,24 +46,34 @@ class ParseUniversities(APIView):
                     # Check if the university is on the site, and thus is able to be scraped. 3 retries.
                     retries = 3
                     for i in range(retries):
-                        university_name, university_url = webscraping_utils.university_is_valid(
+                        university_name, university_url = engine.university_is_valid(
                             university_name=university_name)
 
                         if university_name is not None and university_url is not None:
-                            webscraping_utils.quit()
+                            # Navigate to university url.
+                            engine.get(university_url)
+                            offer_rate, acceptance_rate = engine.get_offer_and_acceptance_rate()
+                            tef = engine.get_tef_rating()
+                            ucas_points = engine.get_university_ucas_points()
+                            engine.quit()
+
                             return Response(data={
                                 "name": university_name,
-                                "url": university_url
+                                "url": university_url,
+                                "offer_rate": offer_rate,
+                                "acceptance_rate": acceptance_rate,
+                                "tef": tef,
+                                "ucas_points": ucas_points
                             }, status=status.HTTP_200_OK)
 
                         else:
                             pass
 
-                    webscraping_utils.quit()
+                    engine.quit()
 
             # Deserialization failed
             else:
-                webscraping_utils.quit()
+                engine.quit()
                 return Response(data=deserializer.errors, status=status.HTTP_400_BAD_REQUEST)
 
 
